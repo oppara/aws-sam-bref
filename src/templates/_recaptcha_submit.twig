@@ -1,0 +1,25 @@
+{# reCAPTCHA submit ボタン用添付テート #}
+{# RECAPTCHA_TYPE に応じて適切な submit ボタンを出力する #}
+
+{% if recaptchaType == 'v3' %}
+
+<button type="submit" class="g-recaptcha" data-callback="onFormSubmit" data-action="submit" data-sitekey="{{ recaptchaSiteKey }}">確認</button>
+
+{% elseif recaptchaType == 'v2-checkbox' %}
+
+<div class="g-recaptcha" data-sitekey="{{ recaptchaSiteKey }}"></div>
+<button type="submit">確認</button>
+
+{% elseif recaptchaType == 'v2-invisible' %}
+
+<button type="submit" class="g-recaptcha" data-callback="onFormSubmit" data-sitekey="{{ recaptchaSiteKey }}">確認</button>
+
+{% elseif recaptchaType == 'enterprise' %}
+
+<button type="submit" class="g-recaptcha" data-callback="onFormSubmit" data-action="submit" data-sitekey="{{ recaptchaSiteKey }}">確認</button>
+
+{% else %}
+
+<button type="submit">確認</button>
+
+{% endif %}

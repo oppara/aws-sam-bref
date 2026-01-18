@@ -1,0 +1,156 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Sample Form for bref (HTTP API)
+
+Globals:
+  Function:
+    Timeout: 10
+    MemorySize: 512
+
+Parameters:
+
+  AppEnv:
+    Type: String
+    AllowedValues: [stg, prod]
+    Description: Application environment (stg or prod)
+
+  AppDebug:
+    Type: String
+    AllowedValues: ["true", "false"]
+    Description: Enable debug mode (true for debug logging, false for production)
+
+  SmtpHost:
+    Type: String
+    Default: "email-smtp.ap-northeast-1.amazonaws.com"
+    Description: SMTP server host name.
+
+  SmtpPort:
+    Type: String
+    Default: "587"
+    Description: SMTP server port.
+
+  EmailFrom:
+    Type: String
+    Description: SES verified envelope-from email address
+
+  EmailFromName:
+    Type: String
+    Default: ""
+    Description: Display name for EmailFrom.
+
+  EmailAdmin:
+    Type: String
+    Description: Administrator email address
+
+  MailSubjectAdmin:
+    Type: String
+    Default: "【お問い合わせ】がありました"
+    Description: Email subject for admin notification
+
+  MailSubjectUser:
+    Type: String
+    Default: "【自動返信】お問い合わせありがとうございます"
+    Description: Email subject for user auto-reply
+
+  RecaptchaType:
+    Type: String
+    AllowedValues: [enterprise, v3, v2-checkbox, v2-invisible]
+    Default: v3
+    Description: reCAPTCHA type (enterprise, v3, v2-checkbox or v2-invisible)
+
+  RecaptchaProjectId:
+    Type: String
+    Default: ""
+    Description: GCP project ID for reCAPTCHA Enterprise
+
+  RecaptchaScoreThreshold:
+    Type: String
+    Default: "0.5"
+    Description: reCAPTCHA score threshold (0.0 - 1.0)
+
+  LogRetentionInDays:
+    Type: Number
+    Default: 90
+    Description: CloudWatch Logs retention period (days)
+
+Resources:
+  TryFormHttpApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/http-api/try-form
+      RetentionInDays: !Ref LogRetentionInDays
+
+  TryFormHttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: $default
+      AccessLogSettings:
+        DestinationArn: !GetAtt TryFormHttpApiLogGroup.Arn
+        Format: '{"requestId":"$context.requestId","host":"$context.domainName","path":"$context.path","httpMethod":"$context.httpMethod""status":"$context.status","ip":"$context.identity.sourceIp",,"requestTime":"$context.requestTime","routeKey":"$context.routeKey","ua":"$context.identity.userAgent","error":"$context.error.message","responseLength":"$context.responseLength"}'
+      CorsConfiguration:
+        AllowMethods:
+          - GET
+          - POST
+          - OPTIONS
+          - PUT
+          - DELETE
+        AllowHeaders:
+          - Content-Type
+          - Authorization
+        AllowOrigins:
+          - "*"
+
+  TryFormFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: try-form-sam
+      CodeUri: src
+      Runtime: provided.al2
+      Handler: public/index.php
+      Layers:
+        - arn:aws:lambda:ap-northeast-1:534081306603:layer:php-84-fpm:35
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource: !Sub arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:try/${AppEnv}/*
+      Environment:
+        Variables:
+          PHP_INI_SCAN_DIR: /var/task/php-conf:/opt/bref/etc/php/conf.d
+          APP_ENV: !Ref AppEnv
+          APP_DEBUG: !Ref AppDebug
+          SES_SMTP_USER: !Sub '{{resolve:secretsmanager:try/${AppEnv}/ses-smtp-user:SecretString}}'
+          SES_SMTP_PASS: !Sub '{{resolve:secretsmanager:try/${AppEnv}/ses-smtp-pass:SecretString}}'
+          SMTP_HOST: !Ref SmtpHost
+          SMTP_PORT: !Ref SmtpPort
+          EMAIL_FROM: !Ref EmailFrom
+          EMAIL_FROM_NAME: !Ref EmailFromName
+          EMAIL_ADMIN: !Ref EmailAdmin
+          MAIL_SUBJECT_ADMIN: !Ref MailSubjectAdmin
+          MAIL_SUBJECT_USER: !Ref MailSubjectUser
+          RECAPTCHA_TYPE: !Ref RecaptchaType
+          RECAPTCHA_SITE_KEY: !Sub '{{resolve:secretsmanager:try/${AppEnv}/recaptocha-site-key:SecretString}}'
+          RECAPTCHA_SECRET_KEY: !Sub '{{resolve:secretsmanager:try/${AppEnv}/recaptocha-secret-key:SecretString}}'
+          RECAPTCHA_PROJECT_ID: !Ref RecaptchaProjectId
+          RECAPTCHA_SCORE_THRESHOLD: !Ref RecaptchaScoreThreshold
+      Events:
+        RootEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref TryFormHttpApi
+            Path: /
+            Method: ANY
+
+        ProxyEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref TryFormHttpApi
+            Path: /{proxy+}
+            Method: ANY
+
+Outputs:
+  TryFormHttpApiEndpoint:
+    Description: "HTTP API endpoint"
+    Value: !Sub "https://${TryFormHttpApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/contact/"

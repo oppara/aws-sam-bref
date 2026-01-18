@@ -1,0 +1,34 @@
+{# reCAPTCHA JavaScript 読み込みテンプレート #}
+{# RECAPTCHA_TYPE に応じて適切なスクリプトを読みむ #}
+
+{% if recaptchaType == 'v3' %}
+  <script src="https://www.google.com/recaptcha/api.js"></script>
+  <script>
+    function onFormSubmit(token) {
+      document.getElementById('contact-form').submit();
+    }
+  </script>
+
+{% elseif recaptchaType == 'v2-checkbox' %}
+
+  <script src="https://www.google.com/recaptcha/api.js"></script>
+
+{% elseif recaptchaType == 'v2-invisible' %}
+
+  <script src="https://www.google.com/recaptcha/api.js"></script>
+  <script>
+    function onFormSubmit(token) {
+      document.getElementById('contact-form').submit();
+    }
+  </script>
+
+{% elseif recaptchaType == 'enterprise' %}
+
+  <script src="https://www.google.com/recaptcha/enterprise.js?render={{ recaptchaSiteKey }}"></script>
+  <script>
+    function onFormSubmit(token) {
+      document.getElementById('contact-form').submit();
+    }
+  </script>
+
+{% endif %}

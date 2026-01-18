@@ -1,0 +1,17 @@
+{% extends 'layout.twig' %}
+
+{% block title %}500 Internal Server Error | {% endblock %}
+
+{% block content %}
+
+<h1>500 Internal Server Error</h1>
+<p>しばらくしてから再度お試しください。</p>
+
+{% if exception is not null %}
+<details>
+  <summary>エラー詳細</summary>
+  <pre>{{ exception }}</pre>
+</details>
+{% endif %}
+
+{% endblock %}
