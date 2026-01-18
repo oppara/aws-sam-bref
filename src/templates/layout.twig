@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    {% set site_name = 'Form Test' %}
+    <title>
+      {% if block('title') is not empty %}
+        {{ block('title') }} | {{ site_name }}
+      {% else %}
+        {{ site_name }}
+      {% endif %}
+    </title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/water.css@2/out/water.css">
+    <style>
+    div.error {
+       color: #fc4903;
+       margin-bottom: 0.5em;
+    }
+</style>
+  </head>
+
+  <body>
+    <header>header</header>
+    <main>
+        {% block content %}{% endblock %}
+    </main>
+    <footer>footer</footer>
+
+{% if recaptchaSiteKey is defined and recaptchaSiteKey %}
+  {{ include('_recaptcha_script.twig') }}
+{% endif %}
+  </body>
+</html>
+

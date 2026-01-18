@@ -1,0 +1,6 @@
+# デプロイにふくめないファイルやフォルダを指定します
+
+.DS_Store
+.github
+exclude
+Makefile

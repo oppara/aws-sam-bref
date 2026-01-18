@@ -1,0 +1,46 @@
+{% extends 'layout.twig' %}
+
+{% block title %}問い合わせ{% endblock %}
+
+{% block content %}
+
+<h1>お問い合わせ</h1>
+
+{% if errors.flash %}
+  <div class="error">{{ errors.flash }}</div>
+{% endif %}
+
+<form method="post" action="/contact/confirm" id="contact-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+  <label for="category">問い合わせカテゴリー</label>
+  <select id="category" name="category">
+    <option value="">選択してください</option>
+    <option value="product" {% if data.category == 'product' %}selected{% endif %}>製品について</option>
+    <option value="service" {% if data.category == 'service' %}selected{% endif %}>サービスについて</option>
+    <option value="pricing" {% if data.category == 'pricing' %}selected{% endif %}>料金について</option>
+    <option value="technical" {% if data.category == 'technical' %}selected{% endif %}>技術サポート</option>
+    <option value="other" {% if data.category == 'other' %}selected{% endif %}>その他</option>
+  </select>
+  <div class="error">{{ errors.category }}</div>
+
+  <label for="name">名前</label>
+  <input type="text" id="name" name="name" value="{{ data.name|e }}">
+  <div class="error">{{ errors.name }}</div>
+
+  <label for="email">Email</label>
+  <input type="text" id="email" name="email" value="{{ data.email|e }}">
+  <div class="error">{{ errors.email }}</div>
+
+  <label for="email_cmp">Email（確認用）</label>
+  <input type="text" id="email_cmp" name="email_cmp" value="{{ data.email_cmp|e }}">
+  <div class="error">{{ errors.email_cmp }}</div>
+
+  <label for="body">問い合わせ内容</label>
+  <textarea id="body" name="body">{{ data.body|e }}</textarea>
+  <div class="error">{{ errors.body }}</div>
+
+{{ include('_recaptcha_submit.twig') }}
+</form>
+
+{% endblock %}
