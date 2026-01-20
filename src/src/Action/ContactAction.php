@@ -61,7 +61,7 @@ class ContactAction
      */
     public function input(Request $request, Response $response): Response
     {
-        $this->logger->info('complete', [
+        $this->logger->info('input complete', [
             'method' => __METHOD__,
         ]);
 
@@ -89,7 +89,7 @@ class ContactAction
      */
     public function confirm(Request $request, Response $response): Response
     {
-        $this->logger->info('start', [
+        $this->logger->info('confirm start', [
             'method' => __METHOD__,
         ]);
 
@@ -165,7 +165,7 @@ class ContactAction
             ]);
         }
 
-        $this->logger->info('complete', [
+        $this->logger->info('confirm complete', [
             'method' => __METHOD__,
         ]);
 
@@ -191,7 +191,7 @@ class ContactAction
      */
     public function execute(Request $request, Response $response): Response
     {
-        $this->logger->info('start', [
+        $this->logger->info('execute start', [
             'method' => __METHOD__,
         ]);
 
@@ -219,7 +219,7 @@ class ContactAction
             }
         }
 
-        $this->logger->info('complete', [
+        $this->logger->info('execute complete', [
             'method' => __METHOD__,
         ]);
 
@@ -242,7 +242,7 @@ class ContactAction
      */
     public function complete(Request $request, Response $response): Response
     {
-        $this->logger->info('start', [
+        $this->logger->info('complete start', [
             'method' => __METHOD__,
         ]);
 
@@ -257,7 +257,7 @@ class ContactAction
             return $this->redirectInput($request, $response);
         }
 
-        $this->logger->info('complete', [
+        $this->logger->info('complete complete', [
             'method' => __METHOD__,
         ]);
 
