@@ -116,6 +116,13 @@ Resources:
               Action:
                 - secretsmanager:GetSecretValue
               Resource: !Sub arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:try/${AppEnv}/*
+        - Statement:
+            - Effect: Allow
+              Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/try-form-sam:*
       Environment:
         Variables:
           PHP_INI_SCAN_DIR: /var/task/php-conf:/opt/bref/etc/php/conf.d
