@@ -47,6 +47,8 @@ class Config
      * @param string $recaptchaType reCAPTCHA タイプ（v3, v2, enterprise）
      * @param string $recaptchaProjectId reCAPTCHA Enterprise プロジェクトID
      * @param float $recaptchaScoreThreshold reCAPTCHA v3 スコア閾値（0.0-1.0）
+     * @param string $sessionHandler セッション保存先ハンドラー（file, database）。デフォルト: file
+     * @param string $sessionDynamodbTable DynamoDB セッションテーブル名（デフォルト: sessions）
      */
     private function __construct(
         public readonly bool $isDebug = false,
@@ -65,6 +67,8 @@ class Config
         public readonly string $recaptchaType = 'v3',
         public readonly string $recaptchaProjectId = '',
         public readonly float $recaptchaScoreThreshold = 0.5,
+        public readonly string $sessionHandler = 'file',
+        public readonly string $sessionDynamodbTable = 'sessions',
     ) {
     }
 
@@ -96,6 +100,8 @@ class Config
             recaptchaType: self::getEnv('RECAPTCHA_TYPE', 'v3'),
             recaptchaProjectId: self::getEnv('RECAPTCHA_PROJECT_ID'),
             recaptchaScoreThreshold: (float) self::getEnv('RECAPTCHA_SCORE_THRESHOLD', 0.5),
+            sessionHandler: self::getEnv('SESSION_HANDLER', 'file'),
+            sessionDynamodbTable: self::getEnv('SESSION_DYNAMODB_TABLE', 'contact-form-sessions'),
         );
     }
 

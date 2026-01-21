@@ -11,6 +11,7 @@ use App\Service\Recaptcha\RecaptchaFactory;
 use App\Validation\ContactValidator;
 use App\Validation\Csrf\CsrfException;
 use App\Validation\Csrf\CsrfValidator;
+use App\Service\Session\SessionInterface;
 use PHPMailer\PHPMailer\Exception as PHPMailerException;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
@@ -24,11 +25,12 @@ use Slim\Views\Twig;
  * - `input()` - 入力画面表示
  * - `confirm()` - 入力値検証・確認画面表示
  * - `execute()` - メール送信処理実行
- * - `complete()` - 完了画面表示（トークン検証） *
+ * - `complete()` - 完了画面表示
+ *
  * **セキュリティ機能：**
  * - reCAPTCHA v3によるボット対策
  * - CSRF トークン検証
- * - 完了画面アクセス用トークン検証 */
+ * - セッションベースの送信済み管理 */
 class ContactAction
 {
     /**
@@ -39,6 +41,7 @@ class ContactAction
      * @param Mailer $mailer メール送信クラス
      * @param CsrfValidator $csrfValidator CSRF検証クラス
      * @param LoggerInterface $logger ロガー
+     * @param SessionInterface $session セッション
      */
     public function __construct(
         private Config $config,
@@ -46,6 +49,7 @@ class ContactAction
         private Mailer $mailer,
         private CsrfValidator $csrfValidator,
         private LoggerInterface $logger,
+        private SessionInterface $session,
     ) {
     }
 
@@ -55,19 +59,36 @@ class ContactAction
      * 初期状態のお問い合わせフォーム（input.twig）を表示します。
      * reCAPTCHA サイトキーをテンプレートに渡します。
      *
+     * セッションから `contact_data` と `contact_errors` を取得して表示し、
+     * 1回限りで削除します。
+     *
      * @param Request $request HTTP リクエスト
      * @param Response $response HTTP レスポンス
      * @return Response 入力画面のレンダリング済みレスポンス
      */
     public function input(Request $request, Response $response): Response
     {
+        $this->logger->info('input start', [
+            'method' => __METHOD__,
+        ]);
+
+        $data = $this->session->get('contact_data') ?? [];
+        $errors = $this->session->get('contact_errors') ?? [];
+        $this->session->delete('contact_data');
+        $this->session->delete('contact_errors');
+
+        $this->logger->debug('input session', [
+            'data' => $data,
+            'errors' => $errors,
+        ]);
+
         $this->logger->info('input complete', [
             'method' => __METHOD__,
         ]);
 
         return $this->render($request, $response, 'input.twig', [
-            'data' => (array) $request->getParsedBody(),
-            'errors' => [],
+            'data' => $data,
+            'errors' => $errors,
             'recaptchaSiteKey' => $this->config->recaptchaSiteKey,
         ]);
     }
@@ -80,12 +101,13 @@ class ContactAction
      * 2. CSRF トークンの検証
      * 3. 入力値の検証
      *
-     * いずれかの検証に失敗した場合は、エラーメッセージ付きで入力画面を表示します。
+     * いずれかの検証に失敗した場合、Flashエラーを追加して
+     * 入力データをセッション保存して入力画面にリダイレクトします。
      * 検証成功時は確認画面（confirm.twig）を表示します。
      *
      * @param Request $request HTTP リクエスト（POSTデータを含む）
      * @param Response $response HTTP レスポンス
-     * @return Response 確認画面またはエラー付き入力画面のレスポンス
+     * @return Response 確認画面またはリダイレクトレスポンス
      */
     public function confirm(Request $request, Response $response): Response
     {
@@ -94,76 +116,58 @@ class ContactAction
         ]);
 
         $data = (array) $request->getParsedBody();
-
-        // reCAPTCHA検証（CSRFチェックの前）
-        $recaptchaToken = $data['g-recaptcha-response'] ?? null;
-        if (!$recaptchaToken) {
-            $this->logger->error('reCAPTCHA token not found');
-            $errors = ['flash' => 'reCAPTCHAトークンが見つかりません'];
-
-            return $this->render($request, $response, 'input.twig', [
-                'data' => $data,
-                'errors' => $errors,
-                'recaptchaSiteKey' => $this->config->recaptchaSiteKey,
-            ]);
-        }
+        $this->logger->debug('confirm data', [
+            'data' => $data,
+        ]);
 
         try {
+            $recaptchaToken = $data['g-recaptcha-response'] ?? null;
+            if (!$recaptchaToken) {
+                $this->logger->error('reCAPTCHA token not found');
+                $this->addFlashError('reCAPTCHAトークンが見つかりません');
+                return $this->redirectToContact($response, $data);
+            }
+
             $recaptchaService = RecaptchaFactory::create($this->config, $this->logger);
             $results = $recaptchaService->verify($recaptchaToken);
 
             if (!$results['success']) {
                 $this->logger->warning('reCAPTCHA verification failed', $results);
-
-                $errors = ['flash' => 'reCAPTCHA検証に失敗しました。もう一度お試しください。'];
-
-                return $this->render($request, $response, 'input.twig', [
-                    'data' => $data,
-                    'errors' => ['flash' => 'reCAPTCHA検証に失敗しました。もう一度お試しください。'],
-                    'recaptchaSiteKey' => $this->config->recaptchaSiteKey,
-                ]);
+                $this->addFlashError('reCAPTCHA検証に失敗しました。もう一度お試しください。');
+                return $this->redirectToContact($response, $data);
             }
+
+            $this->csrfValidator->validate($request);
+
         } catch (RecaptchaException $e) {
             $this->logger->error('reCAPTCHA verification error', [
                 'error' => $e->getMessage(),
             ]);
-            $errors = ['flash' => 'reCAPTCHA検証中にエラーが発生しました。'];
-
-            return $this->render($request, $response, 'input.twig', [
-                'data' => $data,
-                'errors' => $errors,
-                'recaptchaSiteKey' => $this->config->recaptchaSiteKey,
-            ]);
-        }
-
-        try {
-            $this->csrfValidator->validate($request);
+            $this->addFlashError('reCAPTCHA検証中にエラーが発生しました。');
+            return $this->redirectToContact($response, $data);
         } catch (CsrfException $e) {
             $this->logger->error('CSRF validation error', [
                 'error' => $e->getMessage(),
             ]);
-            $errors = ['flash' => 'CSRF検証に失敗しました。もう一度お試しください。'];
-
-            return $this->render($request, $response, 'input.twig', [
-                'data' => $data,
-                'errors' => $errors,
-                'recaptchaSiteKey' => $this->config->recaptchaSiteKey,
-            ]);
+            $this->addFlashError('CSRF検証に失敗しました。もう一度お試しください。');
+            return $this->redirectToContact($response, $data);
         }
 
         [$errors, $clean] = ContactValidator::validate($data);
-
         if ($errors) {
             $this->logger->info('validation failed', [
                 'errors' => $errors
             ]);
+            $this->addFlashError('入力内容を確認してください。');
 
-            return $this->render($request, $response, 'input.twig', [
-                'data' => $data,
-                'errors' => $errors,
-                'recaptchaSiteKey' => $this->config->recaptchaSiteKey,
-            ]);
+            // バリデーションエラーをセッションに保存してリダイレクト
+            return $this->redirectToContact($response, $data, $errors);
         }
+
+        // 検証済みデータをセッションに保存
+        $this->session->set('contact_data', $clean);
+        // エラーをクリア
+        $this->session->delete('contact_errors');
 
         $this->logger->info('confirm complete', [
             'method' => __METHOD__,
@@ -181,13 +185,13 @@ class ContactAction
      * 1. CSRF トークンの検証
      * 2. 管理者へのメール送信
      * 3. ユーザーへの自動返信メール送信
-     * 4. 完了トークンを生成してリダイレクト
+     * 4. 送信済みフラグをセッションに保存して完了画面へリダイレクト
      *
      * @param Request $request HTTP リクエスト（POSTデータにメール内容を含む）
      * @param Response $response HTTP レスポンス
      * @throws CsrfException CSRF検証失敗時
      * @throws PHPMailerException メール送信失敗時
-     * @return Response 完了画面へのリダイレクトレスポンス（Location: /contact/complete?token=...）
+     * @return Response 完了画面へのリダイレクトレスポンス
      */
     public function execute(Request $request, Response $response): Response
     {
@@ -202,41 +206,48 @@ class ContactAction
                 'error' => $e->getMessage(),
             ]);
 
-            throw $e;
+            $this->addFlashError('CSRF検証に失敗しました。もう一度お試しください。');
+            return $this->redirectToContact($response);
         }
 
-        $data = (array) $request->getParsedBody();
-        if ($data) {
-            try {
-                $this->mailer->sendAdmin($data);
-                $this->mailer->sendUser($data);
-            } catch (PHPMailerException $e) {
-                $this->logger->error('send email failed', [
-                    'error' => $e->getMessage(),
-                ]);
+        // セッションからデータを取得
+        $data = $this->session->get('contact_data');
+        if (!$data || !is_array($data)) {
+            $this->logger->error('contact_data not found in session');
+            return $this->redirectToContact($response);
+        }
 
-                throw $e;
-            }
+        try {
+            $this->mailer->sendAdmin($data);
+            $this->mailer->sendUser($data);
+        } catch (PHPMailerException $e) {
+            $this->logger->error('send email failed', [
+                'error' => $e->getMessage(),
+            ]);
+
+            throw $e;
         }
 
         $this->logger->info('execute complete', [
             'method' => __METHOD__,
         ]);
 
-        $token = $this->generateCompletionToken();
+        // 送信済みだからcontact_dataを削除し、送信済みフラグを保存
+        $this->session->delete('contact_data');
+        $this->session->set('contact_sent', true);
 
         return $response
             ->withStatus(302)
-            ->withHeader('Location', '/contact/complete?token=' . urlencode($token));
+            ->withHeader('Location', '/contact/complete');
     }
 
     /**
      * 完了画面を表示
      *
-     * クエリパラメータ `token` を検証し、有効な場合は完了画面を表示します。
-     * トークンが無効または期限切れの場合は入力画面にリダイレクトします。
+     * セッション内の送信済みフラグを検査し、有効な場合は完了画面を表示します。
+     * フラグがない場合は入力画面にリダイレクトします。
      *
-     * @param Request $request HTTP リクエスト（GETパラメータにtokenを含む）
+     * @param Request $request HTTP リクエスト
      * @param Response $response HTTP レスポンス
      * @return Response 完了画面またはリダイレクトレスポンス
      */
@@ -246,38 +257,43 @@ class ContactAction
             'method' => __METHOD__,
         ]);
 
-        // クエリパラメータからトークンを取得して検証
-        $token = $request->getQueryParams()['token'] ?? null;
-        if (!$token || !$this->verifyCompletionToken($token)) {
-            $this->logger->warning('invalid or expired token', [
+        // 送信済みフラグを確認
+        $sent = $this->session->get('contact_sent');
+        if (!$sent) {
+            $this->logger->warning('contact not sent', [
                 'method' => __METHOD__,
-                'token' => $token,
             ]);
 
-            return $this->redirectInput($request, $response);
+            return $this->redirectToContact($response);
         }
+
+        $this->session->regenerateId(true);
 
         $this->logger->info('complete complete', [
             'method' => __METHOD__,
         ]);
 
+        // 送信済みフラグを削除
+        $this->session->delete('contact_sent');
+
         return $this->render($request, $response, 'complete.twig');
     }
 
     /**
-     * 入力画面にリダイレクト
+     * 入力画面へリダイレクト
      *
-     * エラー時や無効なトークン時に入力画面へリダイレクトします。
+     * Flash エラーメッセージを追加し、入力データとバリデーション エラーを
+     * セッションに保存して入力画面にリダイレクトします。
      *
-     * @param Request $request HTTP リクエスト
      * @param Response $response HTTP レスポンス
-     * @return Response 入力画面へのリダイレクトレスポンス（Location: /contact）
+     * @param array<string, mixed> $data 入力データ
+     * @param array<string, mixed> $errors エラーメッセージとバリデーション エラー
+     * @return Response 入力画面へのリダイレクトレスポンス
      */
-    public function redirectInput(Request $request, Response $response): Response
+    private function redirectToContact(Response $response, array $data = [], array $errors = []): Response
     {
-        $this->logger->info('complete', [
-            'method' => __METHOD__,
-        ]);
+        $this->session->set('contact_errors', $errors);
+        $this->session->set('contact_data', $data);
 
         return $response
             ->withStatus(302)
@@ -285,63 +301,14 @@ class ContactAction
     }
 
     /**
-     * 完了画面アクセス用トークンを生成
+     * Flashエラーメッセージを追加
      *
-     * タイムスタンプと HMAC-SHA256 署名を含むトークンを生成します。
-     * トークン形式: timestamp.signature
-     *
-     * @return string 署名付きトークン
+     * @param string $message エラーメッセージ
+     * @return void
      */
-    private function generateCompletionToken(): string
+    private function addFlashError(string $message): void
     {
-        $timestamp = (int) (microtime(true) * 1000); // ミリ秒
-        $signature = hash_hmac('sha256', (string) $timestamp, 'contact_form_secret');
-
-        return $timestamp . '.' . $signature;
-    }
-
-    /**
-     * 完了画面アクセス用トークンを検証
-     *
-     * トークンの形式とHMAC-SHA256署名を検証します。
-     * 指定秒数以上前のトークンは無効と判定します。
-     *
-     * **検証項目：**
-     * - トークン形式: timestamp.signature
-     * - タイムスタンプ: 数値であること
-     * - 署名: HMAC-SHA256が一致すること
-     * - 有効期限: 指定秒数以内であること（デフォルト: 10秒）
-     *
-     * @param string $token 検証対象のトークン（timestamp.signature 形式）
-     * @param int $sec トークンの有効期限（秒）。デフォルト: 10秒
-     * @return bool トークンが有効な場合 true、無効な場合 false
-     */
-    private function verifyCompletionToken(string $token, $sec = 10): bool
-    {
-        $parts = explode('.', $token);
-        if (count($parts) !== 2) {
-            return false;
-        }
-
-        [$timestamp, $signature] = $parts;
-
-        // タイムスタンプが数値であるか確認
-        if (!is_numeric($timestamp)) {
-            return false;
-        }
-
-        // 署名を検証
-        $expectedSignature = hash_hmac('sha256', $timestamp, 'contact_form_secret');
-        if (!hash_equals($signature, $expectedSignature)) {
-            return false;
-        }
-
-        // タイムスタンプが有効期限内か確認（ $sec 秒以内）
-        $currentTimestamp = (int) (microtime(true) * 1000);
-        $tokenAge = $currentTimestamp - (int) $timestamp;
-        $maxAge = $sec * 1000; // ミリ秒
-
-        return $tokenAge <= $maxAge && $tokenAge >= 0;
+        $this->session->getFlash()->add('error', $message);
     }
 
     /**
@@ -358,10 +325,15 @@ class ContactAction
      */
     private function render(Request $request, Response $response, string $template, array $params = []): Response
     {
+        // フラッシュメッセージを取得
+        $flash = $this->session->getFlash()->all();
+
         $response = $this->twig->render($response, $template, array_merge($params, [
             'csrf_token' => $request->getAttribute('csrf_token'),
             'categoryLabels' => Config::getCategoryLabels(),
             'recaptchaType' => $this->config->recaptchaType,
+            'flash' => $flash,
+            'session' => $this->session,
         ]));
 
         return $response

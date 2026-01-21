@@ -7,8 +7,7 @@ AWS SAM で管理する Lambda 上で動作する PHP のお問い合わせフ�
 - Google reCAPTCHA による検証
 - AWS SES を使用したメール送信
 
-Lambda 環境はセッションが使用できない。  
-DynamoDB を使用すればセッション管理も可能だが、今回は使用しないシンプルな構成とする。
+Lambda 環境でのセッション管理は DynamoDB を使用。
 
 ## システム要件
 
@@ -22,6 +21,7 @@ DynamoDB を使用すればセッション管理も可能だが、今回は使�
 
 - Lambda 関数
 - API Gateway（HTTP API）
+- DynamoDB
 - CloudWatch Logs のロググループ
 
 ## 事前に作成しておく AWS リソース
@@ -63,6 +63,7 @@ template.yaml で使用するパラメータ一覧。
 | RecaptchaProjectId | - | GCP プロジェクト ID（reCAPTCHA Enterprise 用） | ○ | RECAPTCHA_PROJECT_ID |
 | RecaptchaScoreThreshold | 0.5 | reCAPTCHA スコア閾値 | ○ | RECAPTCHA_SCORE_THRESHOLD |
 | LogRetentionInDays | 90 | CloudWatch ロググループのログ保持期間 | ○ | - |
+| SessionHandler | dynamodb（開発時は file）| セッションの保存先（dynamodb\|file） | ○ | SESSION_HANDLER |
 
 ## AWS へのデプロイ
 
@@ -154,6 +155,12 @@ enterprise 以外は実装済み。
 | `RECAPTCHA_SITE_KEY` | reCAPTCHA サイトキー |
 | `RECAPTCHA_SECRET_KEY` | reCAPTCHA シークレットキー |
 
+## セッション管理
+
+| 環境変数 | 説明 |
+| --------- |  ------ |
+| `SESSION_HANDLER` | セッション保存先（dynamodb\|file） |
+| `SESSION_DYNAMODB_TABLE` | DynamoDB テーブル名（DynamoDB 使用時） |
 
 ## API エンドポイント
 
@@ -178,11 +185,9 @@ enterprise 以外は実装済み。
 - 管理者メール送信
 - ユーザー自動返信メール送信
 
-### GET /contact/complete?token={token}
+### GET /contact/complete
 
 完了画面表示を表示する。
-
-- トークン検証（有効期限: 10 秒）
 
 ## ディレクトリ構成
 
@@ -206,7 +211,8 @@ enterprise 以外は実装済み。
 │   │   ├── Logger                   # ロギング関連
 │   │   ├── Service
 │   │   │   ├── Mailer               # メール送信
-│   │   │   └── Recaptcha            # reCAPTCHA 検証
+│   │   │   ├── Recaptcha            # reCAPTCHA 検証
+│   │   │   └── Session              # セッション管理
 │   │   └── Validation               # 入力値検証
 │   ├── templates                    # Twig テンプレート
 │   └── vendor                         

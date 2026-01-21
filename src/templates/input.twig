@@ -6,8 +6,16 @@
 
 <h1>お問い合わせ</h1>
 
-{% if errors.flash %}
-  <div class="error">{{ errors.flash }}</div>
+{% if flash.error %}
+  {% for message in flash.error %}
+    <div class="error">{{ message }}</div>
+  {% endfor %}
+{% endif %}
+
+{% if flash.success %}
+  {% for message in flash.success %}
+    <div class="success">{{ message }}</div>
+  {% endfor %}
 {% endif %}
 
 <form method="post" action="/contact/confirm" id="contact-form">

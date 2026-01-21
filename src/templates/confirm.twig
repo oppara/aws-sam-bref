@@ -13,18 +13,11 @@
   <p>Email: {{ data.email }}</p>
   <p>問い合わせ内容:<br>{{ data.body|nl2br }}</p>
 
-  {% for k, v in data %}
-    <input type="hidden" name="{{ k }}" value="{{ v|e }}">
-  {% endfor %}
-
   <button>送信</button>
 </form>
 
 <form method="post" action="/contact">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-  {% for k, v in data %}
-    <input type="hidden" name="{{ k }}" value="{{ v|e }}">
-  {% endfor %}
   <button>戻る</button>
 </form>
 

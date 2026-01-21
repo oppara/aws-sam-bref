@@ -9,6 +9,8 @@ use App\Action\ErrorAction;
 use App\Config;
 use App\Logger\LoggerFactory;
 use App\Service\Mailer\Mailer;
+use App\Service\Session\SessionFactory;
+use App\Service\Session\SessionManagerInterface;
 use DI\Container;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
@@ -38,6 +40,12 @@ $app->add(TwigMiddleware::createFromContainer($app, Twig::class));
 
 // Mailer
 $container->set(Mailer::class, fn () => new Mailer($config, $logger, $twig));
+
+// Session
+$session = SessionFactory::create($config, $container);
+$container->set(SessionManagerInterface::class, fn () => $session);
+$container->set(\App\Service\Session\SessionInterface::class, fn () => $session);
+$session->start();
 
 // CSRF
 $app->add(function (Request $request, $handler): Response {
